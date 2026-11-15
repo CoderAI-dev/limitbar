@@ -15,8 +15,6 @@ If you pay for Claude Max/Pro, ChatGPT Pro/Plus (Codex) or SuperGrok, your codin
 automatically, and tells you how fast you are burning through your quota so you can pace your
 usage across the week instead of getting rate-limited on day five.
 
-<p align="center"><img src="docs/screenshot.png" width="460" alt="LimitBar popover showing Claude Code, Codex and Grok weekly usage limits with progress bars, pace ticks and over-pace usage in red"></p>
-
 ## Features
 
 - **All your AI subscriptions in one menu bar icon** — one mini progress bar per provider
@@ -34,6 +32,8 @@ usage across the week instead of getting rate-limited on day five.
   or uploads your tokens. No server, no telemetry, no analytics.
 - **Native and tiny** — SwiftUI, no dependencies, under ~1,000 lines of code you can audit in
   minutes. Auto-refresh every 5 minutes, launch at login.
+
+<p align="center"><img src="docs/screenshot.png" width="460" alt="LimitBar popover showing Claude Code, Codex and Grok weekly usage limits with progress bars, pace ticks and over-pace usage in red"></p>
 
 ## Supported providers
 
