@@ -6,7 +6,7 @@ public struct GrokProvider: UsageProvider {
 
     public func fetch() async throws -> ProviderSnapshot {
         let file = try HTTP.readHomeFile(".grok/auth.json", cli: id.cliName)
-        guard let key = Self.bearerKey(fromAuthFile: file) else { throw UsageError.notSignedIn(cli: id.cliName) }
+        guard let key = try Self.bearerKey(fromAuthFile: file) else { throw UsageError.notSignedIn(cli: id.cliName) }
         let data = try await HTTP.get(
             URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!,
             headers: ["Authorization": "Bearer \(key)"],
@@ -16,11 +16,16 @@ public struct GrokProvider: UsageProvider {
     }
 
     /// The auth file is keyed by `<issuer>::<id>`. Only x.ai-issued tokens are sent to the endpoint;
-    /// the first such entry with a string `key` holds the token.
-    static func bearerKey(fromAuthFile data: Data) -> String? {
-        guard let entries = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return entries.keys.filter { $0.hasPrefix("https://auth.x.ai::") }.sorted().lazy
-            .compactMap { (entries[$0] as? [String: Any])?["key"] as? String }.first
+    /// the first such entry with a string `key` holds the token. Returns nil when there is no x.ai
+    /// entry (not signed in); throws when the file or its x.ai entries are not in the expected shape.
+    static func bearerKey(fromAuthFile data: Data) throws -> String? {
+        let unreadable = UsageError.credentialsUnreadable(cli: ProviderID.grok.cliName)
+        guard let entries = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw unreadable }
+        let issuerKeys = entries.keys.filter { $0.hasPrefix("https://auth.x.ai::") }.sorted()
+        if issuerKeys.isEmpty { return nil }
+        guard let key = issuerKeys.lazy.compactMap({ (entries[$0] as? [String: Any])?["key"] as? String }).first
+        else { throw unreadable }
+        return key
     }
 
     private struct Response: Decodable {

@@ -28,12 +28,19 @@ struct ProviderSection: View {
                 ForEach(Array(snapshot.windows.enumerated()), id: \.offset) { WindowRow(window: $0.element) }
                     .opacity(state.isStale ? 0.45 : 1)
             }
-            if case .failed(let message, _) = state {
+            if let message = errorMessage {
                 Label(message, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    private var errorMessage: String? {
+        switch state {
+        case .failed(let message, _), .unavailable(let message): message
+        case .loading, .loaded: nil
         }
     }
 }

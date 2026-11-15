@@ -8,7 +8,7 @@ struct PopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(store.order.enumerated()), id: \.element) { index, id in
+            ForEach(Array(store.visibleOrder.enumerated()), id: \.element) { index, id in
                 if index > 0 { Divider().padding(.vertical, 10) }
                 ProviderSection(id: id, state: store.states[id] ?? .loading)
             }

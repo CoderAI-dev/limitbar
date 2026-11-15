@@ -69,6 +69,68 @@ private let snapshot = ProviderSnapshot(
         #expect(store.states[.claude]?.isStale == true)
     }
 
+    @Test func notSignedInProviderIsHidden() async {
+        let store = UsageStore(providers: [
+            FakeProvider(.claude, .success(snapshot)),
+            FakeProvider(.grok, .failure(UsageError.notSignedIn(cli: "grok"))),
+        ])
+        await store.refresh()
+        #expect(store.states[.grok] == .unavailable(message: UsageError.notSignedIn(cli: "grok").errorDescription!))
+        #expect(store.visibleOrder == [.claude])
+    }
+
+    @Test func allNotSignedInShowsEveryProvider() async {
+        let store = UsageStore(providers: [
+            FakeProvider(.claude, .failure(UsageError.notSignedIn(cli: "claude"))),
+            FakeProvider(.codex, .failure(UsageError.notSignedIn(cli: "codex"))),
+        ])
+        await store.refresh()
+        #expect(store.visibleOrder == store.order)
+    }
+
+    @Test func signingOutDropsSnapshot() async {
+        let provider = FakeProvider(.codex, .success(snapshot))
+        let store = UsageStore(providers: [provider])
+        await store.refresh()
+        provider.setResult(.failure(UsageError.notSignedIn(cli: "codex")))
+        await store.refresh()
+        #expect(store.states[.codex] == .unavailable(message: UsageError.notSignedIn(cli: "codex").errorDescription!))
+        #expect(store.states[.codex]?.snapshot == nil)
+    }
+
+    @Test func unreadableCredentialsKeepProviderVisible() async {
+        let provider = FakeProvider(.codex, .success(snapshot))
+        let store = UsageStore(providers: [provider])
+        await store.refresh()
+        provider.setResult(.failure(UsageError.credentialsUnreadable(cli: "codex")))
+        await store.refresh()
+        let message = UsageError.credentialsUnreadable(cli: "codex").errorDescription!
+        #expect(store.states[.codex] == .failed(message: message, lastSnapshot: snapshot))
+        #expect(store.visibleOrder == [.codex])
+    }
+
+    @Test func onlyNotSignedInProvidersAreHidden() async {
+        // With a hidden provider present, failed ones must stay visible on their own merit
+        // (not via the "none signed in" fallback).
+        let store = UsageStore(providers: [
+            FakeProvider(.claude, .failure(UsageError.notSignedIn(cli: "claude"))),
+            FakeProvider(.codex, .failure(UsageError.credentialsUnreadable(cli: "codex"))),
+            FakeProvider(.grok, .failure(UsageError.http(status: 500))),
+        ])
+        await store.refresh()
+        #expect(store.visibleOrder == [.codex, .grok])
+    }
+
+    @Test func nonUsageErrorKeepsLastSnapshot() async {
+        struct OtherError: Error {}
+        let provider = FakeProvider(.claude, .success(snapshot))
+        let store = UsageStore(providers: [provider])
+        await store.refresh()
+        provider.setResult(.failure(OtherError()))
+        await store.refresh()
+        #expect(store.states[.claude] == .failed(message: "Request failed", lastSnapshot: snapshot))
+    }
+
     @Test func refreshIfStaleSkipsRecentRefresh() async {
         let provider = FakeProvider(.codex, .success(snapshot))
         let store = UsageStore(providers: [provider])

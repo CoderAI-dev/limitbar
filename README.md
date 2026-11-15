@@ -24,7 +24,7 @@ usage across the week instead of getting rate-limited on day five.
 
 - **All your AI subscriptions in one menu bar icon** — one mini progress bar per provider
   (C = Claude, X = Codex, G = Grok), filled to its most-used limit. Monochrome like the system
-  battery icon; dimmed when the data is stale.
+  battery icon; dimmed when the data is stale. Providers you are not signed in to are hidden.
 - **Every limit window** — 5-hour session limits, weekly limits and per-model limits (e.g. Claude
   weekly limits for a specific model), each with a progress bar, percent used, time until reset
   and your plan.
@@ -46,7 +46,8 @@ usage across the week instead of getting rate-limited on day five.
 | **Codex** (OpenAI) | `codex` CLI signed in with ChatGPT | 5-hour, weekly |
 | **Grok** (xAI) | `grok` CLI | weekly / monthly credit usage |
 
-Only providers you are signed in to show data; the others just show a hint.
+Providers whose CLI is not signed in are hidden from the menu bar and the popover, and appear
+automatically after you sign in. If none is signed in, all three are shown with a sign-in hint.
 
 ## Requirements
 

@@ -90,10 +90,23 @@ private func json(_ s: String) -> Data { Data(s.utf8) }
         #expect(snapshot.windows[0].duration == 604_800)
     }
 
-    @Test func bearerKeyFromAuthFile() {
-        #expect(GrokProvider.bearerKey(fromAuthFile: json(#"{"https://auth.x.ai::a":{"other":1},"https://auth.x.ai::b":{"key":"k1"}}"#)) == "k1")
-        #expect(GrokProvider.bearerKey(fromAuthFile: json(#"{"https://auth.evil.example::a":{"key":"bad"},"https://auth.x.ai::b":{"key":"k1"}}"#)) == "k1")
-        #expect(GrokProvider.bearerKey(fromAuthFile: json(#"{"https://other.example::a":{"key":"bad"}}"#)) == nil)
-        #expect(GrokProvider.bearerKey(fromAuthFile: json(#"{"https://auth.x.ai::a":{}}"#)) == nil)
+    @Test func bearerKeyFromAuthFile() throws {
+        #expect(try GrokProvider.bearerKey(fromAuthFile: json(#"{"https://auth.x.ai::a":{"other":1},"https://auth.x.ai::b":{"key":"k1"}}"#)) == "k1")
+        #expect(try GrokProvider.bearerKey(fromAuthFile: json(#"{"https://auth.evil.example::a":{"key":"bad"},"https://auth.x.ai::b":{"key":"k1"}}"#)) == "k1")
+        #expect(try GrokProvider.bearerKey(fromAuthFile: json(#"{"https://other.example::a":{"key":"bad"}}"#)) == nil)
+        #expect(try GrokProvider.bearerKey(fromAuthFile: json("{}")) == nil)
+        #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json(#"{"https://auth.x.ai::a":{}}"#)) }
+        #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json(#"{"https://auth.x.ai::a":{"key":123}}"#)) }
+        #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json("not json")) }
+        #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json("[1]")) }
+    }
+
+    @Test func codexCredentialsFromAuthFile() throws {
+        let credentials = try CodexProvider.credentials(fromAuthFile: json(#"{"tokens":{"access_token":"t","account_id":"a"}}"#))
+        #expect(credentials.accessToken == "t")
+        #expect(credentials.accountID == "a")
+        #expect(throws: UsageError.notSignedIn(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json(#"{"tokens":null}"#)) }
+        #expect(throws: UsageError.notSignedIn(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json("{}")) }
+        #expect(throws: UsageError.credentialsUnreadable(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json("not json")) }
     }
 }

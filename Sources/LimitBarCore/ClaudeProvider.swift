@@ -24,7 +24,7 @@ public struct ClaudeProvider: UsageProvider {
         let stdout = Pipe()
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { throw UsageError.notSignedIn(cli: id.cliName) }
+        do { try process.run() } catch { throw UsageError.credentialsUnreadable(cli: id.cliName) }
         // An unanswered keychain prompt would block forever; kill the process after 2 minutes, which
         // leaves time to type the keychain password. Other providers' states update meanwhile.
         let timeout = DispatchWorkItem { [process] in process.terminate() }
@@ -39,9 +39,11 @@ public struct ClaudeProvider: UsageProvider {
             struct OAuth: Decodable { let accessToken: String; let subscriptionType: String? }
             let claudeAiOauth: OAuth
         }
+        // `security` exits with 44 when the item does not exist, i.e. Claude Code is not signed in.
+        if process.terminationStatus == 44 { throw UsageError.notSignedIn(cli: id.cliName) }
         guard process.terminationStatus == 0,
               let credentials = try? JSONDecoder().decode(Credentials.self, from: output)
-        else { throw UsageError.notSignedIn(cli: id.cliName) }
+        else { throw UsageError.credentialsUnreadable(cli: id.cliName) }
         return (credentials.claudeAiOauth.accessToken, credentials.claudeAiOauth.subscriptionType)
     }
 

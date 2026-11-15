@@ -28,11 +28,16 @@ enum HTTP {
         }
     }
 
-    /// Reads a JSON credentials file from the home directory.
+    /// Reads a JSON credentials file from the home directory. Only a missing file means not signed in.
     static func readHomeFile(_ relativePath: String, cli: String) throws -> Data {
         let url = FileManager.default.homeDirectoryForCurrentUser.appending(path: relativePath)
-        guard let data = try? Data(contentsOf: url) else { throw UsageError.notSignedIn(cli: cli) }
-        return data
+        do {
+            return try Data(contentsOf: url)
+        } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
+            throw UsageError.notSignedIn(cli: cli)
+        } catch {
+            throw UsageError.credentialsUnreadable(cli: cli)
+        }
     }
 }
 

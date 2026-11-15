@@ -5,18 +5,27 @@ public struct CodexProvider: UsageProvider {
     public init() {}
 
     public func fetch() async throws -> ProviderSnapshot {
-        struct Auth: Decodable {
-            struct Tokens: Decodable { let access_token: String; let account_id: String }
-            let tokens: Tokens
-        }
         let file = try HTTP.readHomeFile(".codex/auth.json", cli: id.cliName)
-        guard let auth = try? JSONDecoder().decode(Auth.self, from: file) else { throw UsageError.notSignedIn(cli: id.cliName) }
+        let credentials = try Self.credentials(fromAuthFile: file)
         let data = try await HTTP.get(
             URL(string: "https://chatgpt.com/backend-api/wham/usage")!,
-            headers: ["Authorization": "Bearer \(auth.tokens.access_token)", "chatgpt-account-id": auth.tokens.account_id],
+            headers: ["Authorization": "Bearer \(credentials.accessToken)", "chatgpt-account-id": credentials.accountID],
             cli: id.cliName
         )
         return try Self.parse(data, now: Date())
+    }
+
+    /// Without `tokens` (e.g. Codex signed in with an API key, not ChatGPT) there are no
+    /// subscription limits, so it counts as not signed in; an undecodable file is an error.
+    static func credentials(fromAuthFile data: Data) throws -> (accessToken: String, accountID: String) {
+        struct Auth: Decodable {
+            struct Tokens: Decodable { let access_token: String; let account_id: String }
+            let tokens: Tokens?
+        }
+        let cli = ProviderID.codex.cliName
+        guard let auth = try? JSONDecoder().decode(Auth.self, from: data) else { throw UsageError.credentialsUnreadable(cli: cli) }
+        guard let tokens = auth.tokens else { throw UsageError.notSignedIn(cli: cli) }
+        return (tokens.access_token, tokens.account_id)
     }
 
     private struct Response: Decodable {

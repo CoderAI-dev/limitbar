@@ -70,11 +70,13 @@ public enum ProviderState: Equatable, Sendable {
     case loading
     case loaded(ProviderSnapshot)
     case failed(message: String, lastSnapshot: ProviderSnapshot?)
+    /// The provider's CLI is not signed in; the message tells how to sign in.
+    case unavailable(message: String)
 
     /// The snapshot to display, fresh or stale.
     public var snapshot: ProviderSnapshot? {
         switch self {
-        case .loading: nil
+        case .loading, .unavailable: nil
         case .loaded(let snapshot): snapshot
         case .failed(_, let snapshot): snapshot
         }
@@ -99,6 +101,7 @@ public enum UsageError: Error, Equatable, LocalizedError {
     case network(String)
     case badResponse
     case keychainTimeout
+    case credentialsUnreadable(cli: String)
 
     public var errorDescription: String? {
         switch self {
@@ -108,6 +111,7 @@ public enum UsageError: Error, Equatable, LocalizedError {
         case .network(let message): message
         case .badResponse: "Unexpected response format"
         case .keychainTimeout: "Keychain access timed out — allow access when macOS asks"
+        case .credentialsUnreadable(let cli): "Couldn't read the `\(cli)` login"
         }
     }
 }

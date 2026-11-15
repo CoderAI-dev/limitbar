@@ -9,7 +9,7 @@ struct LimitBarApp: App {
         MenuBarExtra {
             PopoverView(store: store)
         } label: {
-            let items = store.order.map { id in
+            let items = store.visibleOrder.map { id in
                 let state = store.states[id]
                 return MenuBarIcon.Item(id: id, percent: state?.snapshot?.worstPercent, stale: state?.isStale ?? false)
             }
