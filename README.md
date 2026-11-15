@@ -1,21 +1,50 @@
 <p align="center"><img src="Resources/AppIcon.png" width="128" alt="LimitBar icon"></p>
 
-# LimitBar
+<h1 align="center">LimitBar</h1>
 
-A tiny native macOS menu bar app that shows how much of your **Claude Code**, **Codex** and
-**Grok** subscription limits you have used — and whether you are burning through them faster
-than the reset allows.
+<p align="center"><b>AI usage monitor for your Mac menu bar.</b><br>
+Track Claude Code, OpenAI Codex and Grok usage limits with live progress bars —
+and see at a glance whether you are on pace or about to hit the limit before the reset.</p>
 
-- **Menu bar:** one mini bar per provider (C / X / G), filled to its most-used limit (dimmed when the
-  last refresh failed and the value is stale). Monochrome, so it fits light and dark menu bars like the system battery icon.
-- **Popover:** every limit window with a progress bar, percent, time to reset and plan.
-- **Pace tick:** each bar has a tick where an even pace would be right now. Usage past the tick is
-  drawn red and labelled "over pace"; short of it is "spare". Weekly (and longer) windows spread
-  the budget over 6/7 of their length (6 of 7 days), leaving a day of buffer; shorter windows such
-  as 5h use their full length.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/macOS-14%2B-black.svg" alt="macOS 14+">
+  <img src="https://img.shields.io/badge/Swift-6-orange.svg" alt="Swift 6">
+</p>
 
-It reuses the logins the official CLIs already store, so there is nothing to configure: if
-`claude`, `codex` or `grok` works in your terminal, LimitBar can read its limits.
+If you pay for Claude Max/Pro, ChatGPT Pro/Plus (Codex) or SuperGrok, your coding agents run on
+**5-hour and weekly usage limits**. Running out mid-task is painful, and checking `/usage` or
+`/status` in three different CLIs is tedious. LimitBar puts every limit in one place, refreshes it
+automatically, and tells you how fast you are burning through your quota so you can pace your
+usage across the week instead of getting rate-limited on day five.
+
+## Features
+
+- **All your AI subscriptions in one menu bar icon** — one mini progress bar per provider
+  (C = Claude, X = Codex, G = Grok), filled to its most-used limit. Monochrome like the system
+  battery icon; dimmed when the data is stale.
+- **Every limit window** — 5-hour session limits, weekly limits and per-model limits (e.g. Claude
+  weekly limits for a specific model), each with a progress bar, percent used, time until reset
+  and your plan.
+- **Pace tracking / burn rate** — each bar has a tick showing where an even pace would be right
+  now. Usage past the tick turns **red** and is labelled "over pace"; below it you see how much is
+  "spare". Weekly limits are budgeted over 6 of 7 days, leaving a day of buffer.
+- **Zero configuration** — reuses the logins of the official `claude`, `codex` and `grok` CLIs. If
+  the CLI works in your terminal, LimitBar can read its limits. No API keys, no accounts.
+- **Private by design** — talks only to each provider's own endpoint, never refreshes, stores, logs
+  or uploads your tokens. No server, no telemetry, no analytics.
+- **Native and tiny** — SwiftUI, no dependencies, under ~1,000 lines of code you can audit in
+  minutes. Auto-refresh every 5 minutes, launch at login.
+
+## Supported providers
+
+| Provider | Sign-in it reuses | Limits shown |
+|----------|-------------------|--------------|
+| **Claude Code** (Anthropic) | `claude` CLI with a Claude subscription (Pro / Max) | 5-hour session, weekly, weekly per model |
+| **Codex** (OpenAI) | `codex` CLI signed in with ChatGPT | 5-hour, weekly |
+| **Grok** (xAI) | `grok` CLI | weekly / monthly credit usage |
+
+Only providers you are signed in to show data; the others just show a hint.
 
 ## Requirements
 
@@ -49,6 +78,28 @@ Data refreshes every 5 minutes, when the popover opens (if older than 60 s), and
 to its own provider. It never refreshes, writes, logs or displays them, and it has no server or
 telemetry of its own. When a token has expired, the popover asks you to run that CLI once, which
 refreshes it.
+
+## FAQ
+
+**How do I check my Claude Code usage limit?**
+Inside Claude Code you can run `/usage`; LimitBar shows the same 5-hour and weekly limits
+permanently in the menu bar, with time to reset.
+
+**How do I see my Codex (ChatGPT) rate limits?**
+LimitBar reads the same usage data `codex` uses for `/status` and shows the 5-hour and weekly
+windows as progress bars.
+
+**Can I see Grok CLI usage outside the TUI?**
+Yes. `grok usage` from a shell often prints "can't show your plan's usage here yet"; LimitBar
+reads the plan's credit usage directly and keeps it visible.
+
+**Will I run out before the reset?**
+The pace tick answers that: if the bar is past the tick (red part), you are using the limit
+faster than an even pace over the window; if it is short of the tick, you have spare quota.
+
+**Does it need an API key or cost anything?**
+No. It uses your existing subscription logins and makes one small read-only request per provider
+every 5 minutes.
 
 ## Limitations
 

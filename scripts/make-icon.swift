@@ -1,5 +1,5 @@
-// Renders the app icon: two usage bars of different heights, the taller one running past its
-// pace tick into red. Writes a 1024 px PNG to the path given as the first argument.
+// Renders the app icon: two horizontal usage bars of different lengths, the longer one running
+// past its pace tick into red. Writes a 1024 px PNG to the path given as the first argument.
 // Usage: swift scripts/make-icon.swift Resources/AppIcon.png
 import AppKit
 
@@ -31,34 +31,36 @@ color(0xFFFFFF, alpha: 0.08).setStroke()
 platePath.lineWidth = 4
 platePath.stroke()
 
-// Two bars: (fill fraction, pace fraction). The second runs past its pace tick, shown in red.
+// Two horizontal bars, top to bottom: (fill fraction, pace fraction). The second runs past its
+// pace tick, shown in red — the same look as the bars in the app's popover.
 let bars: [(fill: CGFloat, pace: CGFloat?)] = [(0.42, nil), (0.82, 0.58)]
-let barWidth: CGFloat = 170, gap: CGFloat = 96, barHeight: CGFloat = 560
-let totalWidth = barWidth * CGFloat(bars.count) + gap * CGFloat(bars.count - 1)
+let barHeight: CGFloat = 150, gap: CGFloat = 96, barWidth: CGFloat = 580
+let totalHeight = barHeight * CGFloat(bars.count) + gap * CGFloat(bars.count - 1)
 let green = color(0x34C759), red = color(0xFF453A)
 
 for (index, bar) in bars.enumerated() {
-    let x = (size - totalWidth) / 2 + CGFloat(index) * (barWidth + gap)
-    let track = NSRect(x: x, y: (size - barHeight) / 2, width: barWidth, height: barHeight)
-    let trackPath = NSBezierPath(roundedRect: track, xRadius: 44, yRadius: 44)
+    // AppKit's y axis points up, so the first bar is drawn at the top.
+    let y = (size + totalHeight) / 2 - barHeight - CGFloat(index) * (barHeight + gap)
+    let track = NSRect(x: (size - barWidth) / 2, y: y, width: barWidth, height: barHeight)
+    let trackPath = NSBezierPath(roundedRect: track, xRadius: barHeight / 2, yRadius: barHeight / 2)
     color(0xFFFFFF, alpha: 0.10).setFill()
     trackPath.fill()
 
     NSGraphicsContext.saveGraphicsState()
     trackPath.addClip()
-    let paceHeight = barHeight * (bar.pace ?? bar.fill)
+    let paceWidth = barWidth * (bar.pace ?? bar.fill)
     green.setFill()
-    NSRect(x: x, y: track.minY, width: barWidth, height: min(paceHeight, barHeight * bar.fill)).fill()
+    NSRect(x: track.minX, y: y, width: min(paceWidth, barWidth * bar.fill), height: barHeight).fill()
     if let pace = bar.pace, bar.fill > pace {
         red.setFill()
-        NSRect(x: x, y: track.minY + paceHeight, width: barWidth, height: barHeight * (bar.fill - pace)).fill()
+        NSRect(x: track.minX + paceWidth, y: y, width: barWidth * (bar.fill - pace), height: barHeight).fill()
     }
     NSGraphicsContext.restoreGraphicsState()
 
     if bar.pace != nil {
-        // The pace tick, slightly wider than the bar.
+        // The pace tick, slightly taller than the bar.
         color(0xFFFFFF).setFill()
-        NSBezierPath(roundedRect: NSRect(x: x - 22, y: track.minY + paceHeight - 9, width: barWidth + 44, height: 18), xRadius: 9, yRadius: 9).fill()
+        NSBezierPath(roundedRect: NSRect(x: track.minX + paceWidth - 9, y: y - 24, width: 18, height: barHeight + 48), xRadius: 9, yRadius: 9).fill()
     }
 }
 
