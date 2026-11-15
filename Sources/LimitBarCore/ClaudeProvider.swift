@@ -29,10 +29,14 @@ public struct ClaudeProvider: UsageProvider {
         // leaves time to type the keychain password. Other providers' states update meanwhile.
         let timeout = DispatchWorkItem { [process] in process.terminate() }
         DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeout)
-        // Read to EOF before waiting so a full pipe cannot deadlock; EOF arrives on exit or kill.
-        let output = stdout.fileHandleForReading.readDataToEndOfFile()
+        // Read (up to the size limit) before waiting so a full pipe cannot deadlock; the read ends at
+        // EOF, on exit or kill. Oversized output is not a login: stop the process and reject it.
+        let output = (try? stdout.fileHandleForReading.read(upToCount: HTTP.maxSize + 1)) ?? Data()
+        let oversized = output.count > HTTP.maxSize
+        if oversized { process.terminate() }
         process.waitUntilExit()
         timeout.cancel()
+        if oversized { throw UsageError.credentialsUnreadable(cli: id.cliName) }
         if process.terminationReason == .uncaughtSignal { throw UsageError.keychainTimeout }
 
         struct Credentials: Decodable {

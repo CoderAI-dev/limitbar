@@ -1,13 +1,16 @@
-#!/usr/bin/env bash
-# Builds build/LimitBar.app (ad-hoc signed). Pass --install to copy it to ~/Applications and open it.
+#!/bin/bash
+# Builds build/LimitBar.app (ad-hoc signed, Hardened Runtime). Pass --install to copy it to
+# ~/Applications and open it.
 set -euo pipefail
+# Use only system tools, whatever the caller's PATH contains (swift is reached through xcrun).
+export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP="$ROOT/build/LimitBar.app"
 
 cd "$ROOT"
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)/LimitBar"
+xcrun swift build -c release
+BIN="$(xcrun swift build -c release --show-bin-path)/LimitBar"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -40,7 +43,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$APP"
+codesign --force --options runtime --sign - "$APP"
 echo "Built $APP"
 
 if [[ "${1:-}" == "--install" ]]; then

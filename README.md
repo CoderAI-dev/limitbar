@@ -64,7 +64,10 @@ cd limitbar
 scripts/build-app.sh --install   # builds, ad-hoc signs, copies to ~/Applications and opens it
 ```
 
-`scripts/build-app.sh` alone only builds `build/LimitBar.app`. Turn on "Launch at login" from the
+`scripts/build-app.sh` alone only builds `build/LimitBar.app`. The app is ad-hoc signed with the
+Hardened Runtime; because you build it yourself it is not quarantined, so Gatekeeper does not block
+it. (A prebuilt download would need a Developer ID signature and notarization, which this project
+does not provide.) Turn on "Launch at login" from the
 popover. Run the unit tests with `swift test`. The icon is rendered by `scripts/make-icon.swift` and the GitHub social preview
 (`docs/social-preview.png`) by `scripts/make-social-preview.swift`.
 
@@ -79,7 +82,7 @@ popover. Run the unit tests with `swift test`. The icon is rendered by `scripts/
 Data refreshes every 5 minutes, when the popover opens (if older than 60 s), and on demand.
 
 **Token policy.** LimitBar only reads the tokens the CLIs already store and sends each one only
-to its own provider. It never refreshes, writes, logs or displays them, and it has no server or
+to its own provider (redirects are refused, so no header ever leaves the provider's host). It never refreshes, writes, logs or displays them, and it has no server or
 telemetry of its own. When a token has expired, the popover asks you to run that CLI once, which
 refreshes it.
 
