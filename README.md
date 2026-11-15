@@ -64,7 +64,8 @@ scripts/build-app.sh --install   # builds, ad-hoc signs, copies to ~/Application
 ```
 
 `scripts/build-app.sh` alone only builds `build/LimitBar.app`. Turn on "Launch at login" from the
-popover. Run the unit tests with `swift test`. The icon is rendered by `scripts/make-icon.swift`.
+popover. Run the unit tests with `swift test`. The icon is rendered by `scripts/make-icon.swift` and the GitHub social preview
+(`docs/social-preview.png`) by `scripts/make-social-preview.swift`.
 
 ## How it works
 
