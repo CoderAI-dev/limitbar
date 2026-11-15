@@ -25,7 +25,9 @@ usage across the week instead of getting rate-limited on day five.
   and your plan.
 - **Pace tracking / burn rate** — each bar has a tick showing where an even pace would be right
   now. Usage past the tick turns **red** and is labelled "over pace"; below it you see how much is
-  "spare". Weekly limits are budgeted over 6 of 7 days, leaving a day of buffer.
+  "spare". Windows of a week or longer (weekly limits, Grok's monthly period) are budgeted over
+  6/7 of their length — 6 of 7 days for a week — leaving a buffer; shorter windows such as 5h use
+  their full length.
 - **Zero configuration** — reuses the logins of the official `claude`, `codex` and `grok` CLIs. If
   the CLI works in your terminal, LimitBar can read its limits. No API keys, no accounts.
 - **Private by design** — talks only to each provider's own endpoint, never refreshes, stores, logs
@@ -44,7 +46,8 @@ usage across the week instead of getting rate-limited on day five.
 | **Grok** (xAI) | `grok` CLI | weekly / monthly credit usage |
 
 Providers whose CLI is not signed in are hidden from the menu bar and the popover, and appear
-automatically after you sign in. If none is signed in, all three are shown with a sign-in hint.
+automatically after you sign in (Claude Code used without a subscription login and Codex used with
+an API key count as not signed in). If none is signed in, all three are shown with a sign-in hint.
 
 ## Requirements
 
@@ -83,6 +86,9 @@ to its own provider (redirects are refused, so no header ever leaves the provide
 telemetry of its own. When a token has expired, the popover asks you to run that CLI once, which
 refreshes it.
 
+Credential files must be regular files of at most 1 MiB; symlinks and special files (including
+FIFOs) are rejected.
+
 ## FAQ
 
 **How do I check my Claude Code usage limit?**
@@ -109,6 +115,8 @@ every 5 minutes.
 
 - These are undocumented endpoints used by the CLIs themselves; they can change without notice.
 - LimitBar does not refresh expired sessions; run the CLI to refresh them.
+- Only the default credential locations are read (`~/.codex/auth.json`, `~/.grok/auth.json`); a
+  relocated CLI home such as `CODEX_HOME` is not followed, and a symlinked auth file is rejected.
 - The Claude keychain read relies on `/usr/bin/security` being on the item's access list, which
   it is for Claude Code's own login. On first use macOS may still ask you to allow it;
   if the prompt goes unanswered for 2 minutes the read is cancelled and retried on the next refresh.

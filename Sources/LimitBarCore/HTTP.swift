@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 enum HTTP {
@@ -38,6 +39,8 @@ enum HTTP {
                 if data.count > maxSize { throw UsageError.badResponse }
             }
             return data
+        } catch let error as URLError where error.code == .cancelled {
+            throw CancellationError()
         } catch let error as URLError {
             throw UsageError.network(error.code == .timedOut ? "Request timed out" : "Network error (\(error.code.rawValue))")
         }
@@ -48,16 +51,27 @@ enum HTTP {
         try readCredentialsFile(at: FileManager.default.homeDirectoryForCurrentUser.appending(path: relativePath), cli: cli)
     }
 
-    /// Reads at most `maxSize` bytes. Only a missing file means not signed in; any other failure,
-    /// including an oversized file, is an unreadable login.
+    /// Opens only regular files, without following symlinks or blocking on FIFOs. Only a missing
+    /// file means not signed in; all other failures, including oversized files, are unreadable.
     static func readCredentialsFile(at url: URL, cli: String) throws -> Data {
+        let (descriptor, openError) = url.withUnsafeFileSystemRepresentation { path -> (Int32, Int32) in
+            guard let path else { return (-1, EINVAL) }
+            let descriptor = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            return (descriptor, errno)
+        }
+        guard descriptor >= 0 else {
+            if openError == ENOENT { throw UsageError.notSignedIn(cli: cli) }
+            throw UsageError.credentialsUnreadable(cli: cli)
+        }
+        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+        defer { try? handle.close() }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+            throw UsageError.credentialsUnreadable(cli: cli)
+        }
         let data: Data
         do {
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
             data = try handle.read(upToCount: maxSize + 1) ?? Data()
-        } catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile {
-            throw UsageError.notSignedIn(cli: cli)
         } catch {
             throw UsageError.credentialsUnreadable(cli: cli)
         }

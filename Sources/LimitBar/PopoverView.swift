@@ -53,7 +53,7 @@ struct PopoverView: View {
     }
 
     private func updatedText(now: Date) -> String {
-        guard let lastUpdated = store.lastUpdated else { return "Updating…" }
+        guard let lastUpdated = store.lastUpdated else { return store.isRefreshing ? "Updating…" : "Not updated yet" }
         let minutes = Int(now.timeIntervalSince(lastUpdated) / 60)
         return minutes < 1 ? "Updated just now" : "Updated \(minutes) min ago"
     }

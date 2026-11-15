@@ -50,7 +50,48 @@ private func json(_ s: String) -> Data { Data(s.utf8) }
     }
 }
 
+@Suite struct ClaudeCredentialsTests {
+    private func credentials(_ json: String, status: Int32 = 0, timedOut: Bool = false) throws -> (token: String, plan: String?) {
+        try ClaudeProvider.credentials(fromSecurityOutput: Data(json.utf8), status: status, timedOut: timedOut)
+    }
+
+    @Test func validItem() throws {
+        let result = try credentials(#"{"claudeAiOauth":{"accessToken":"tok","subscriptionType":"max"}}"#)
+        #expect(result.token == "tok")
+        #expect(result.plan == "max")
+    }
+
+    @Test func itemWithoutSubscriptionLoginIsNotSignedIn() {
+        #expect(throws: UsageError.notSignedIn(cli: "claude")) { try credentials(#"{"mcpOAuth":{}}"#) }
+    }
+
+    @Test func missingItemIsNotSignedIn() {
+        #expect(throws: UsageError.notSignedIn(cli: "claude")) { try credentials("", status: 44) }
+    }
+
+    @Test func otherFailureIsUnreadable() {
+        #expect(throws: UsageError.credentialsUnreadable(cli: "claude")) { try credentials("", status: 1) }
+    }
+
+    @Test func invalidJSONIsUnreadable() {
+        #expect(throws: UsageError.credentialsUnreadable(cli: "claude")) { try credentials("not json") }
+    }
+
+    @Test func killedProcessIsTimeout() {
+        #expect(throws: UsageError.keychainTimeout) { try credentials("", status: 15, timedOut: true) }
+    }
+}
+
 @Suite struct CodexParsingTests {
+    @Test func codexCredentialsFromAuthFile() throws {
+        let credentials = try CodexProvider.credentials(fromAuthFile: json(#"{"tokens":{"access_token":"t","account_id":"a"}}"#))
+        #expect(credentials.accessToken == "t")
+        #expect(credentials.accountID == "a")
+        #expect(throws: UsageError.notSignedIn(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json(#"{"tokens":null}"#)) }
+        #expect(throws: UsageError.notSignedIn(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json("{}")) }
+        #expect(throws: UsageError.credentialsUnreadable(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json("not json")) }
+    }
+
     @Test func primaryOnly() throws {
         let data = json("""
         {"plan_type":"pro","rate_limit":{"allowed":true,"limit_reached":false,
@@ -101,12 +142,4 @@ private func json(_ s: String) -> Data { Data(s.utf8) }
         #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json("[1]")) }
     }
 
-    @Test func codexCredentialsFromAuthFile() throws {
-        let credentials = try CodexProvider.credentials(fromAuthFile: json(#"{"tokens":{"access_token":"t","account_id":"a"}}"#))
-        #expect(credentials.accessToken == "t")
-        #expect(credentials.accountID == "a")
-        #expect(throws: UsageError.notSignedIn(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json(#"{"tokens":null}"#)) }
-        #expect(throws: UsageError.notSignedIn(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json("{}")) }
-        #expect(throws: UsageError.credentialsUnreadable(cli: "codex")) { try CodexProvider.credentials(fromAuthFile: json("not json")) }
-    }
 }

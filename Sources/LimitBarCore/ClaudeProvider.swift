@@ -5,7 +5,7 @@ public struct ClaudeProvider: UsageProvider {
     public init() {}
 
     public func fetch() async throws -> ProviderSnapshot {
-        let (token, plan) = try readCredentials()
+        let (token, plan) = try await readCredentials()
         let data = try await HTTP.get(
             URL(string: "https://api.anthropic.com/api/oauth/usage")!,
             headers: ["Authorization": "Bearer \(token)", "anthropic-beta": "oauth-2025-04-20"],
@@ -15,7 +15,18 @@ public struct ClaudeProvider: UsageProvider {
         return ProviderSnapshot(windows: snapshot.windows, plan: plan, fetchedAt: snapshot.fetchedAt)
     }
 
-    private func readCredentials() throws -> (token: String, plan: String?) {
+    private func readCredentials() async throws -> (token: String, plan: String?) {
+        // The read blocks for up to 2 minutes while a keychain prompt is open, so run it off the
+        // Swift concurrency pool.
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(with: Result { try Self.readKeychainItem() })
+            }
+        }
+    }
+
+    private static func readKeychainItem() throws -> (token: String, plan: String?) {
+        let cli = ProviderID.claude.cliName
         // Use the `security` CLI rather than SecItem: it is already on the item's ACL, so there is no
         // prompt, whereas an ad-hoc-signed app would be re-prompted after every rebuild.
         let process = Process()
@@ -24,7 +35,7 @@ public struct ClaudeProvider: UsageProvider {
         let stdout = Pipe()
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { throw UsageError.credentialsUnreadable(cli: id.cliName) }
+        do { try process.run() } catch { throw UsageError.credentialsUnreadable(cli: cli) }
         // An unanswered keychain prompt would block forever; kill the process after 2 minutes, which
         // leaves time to type the keychain password. Other providers' states update meanwhile.
         let timeout = DispatchWorkItem { [process] in process.terminate() }
@@ -36,19 +47,26 @@ public struct ClaudeProvider: UsageProvider {
         if oversized { process.terminate() }
         process.waitUntilExit()
         timeout.cancel()
-        if oversized { throw UsageError.credentialsUnreadable(cli: id.cliName) }
-        if process.terminationReason == .uncaughtSignal { throw UsageError.keychainTimeout }
+        if oversized { throw UsageError.credentialsUnreadable(cli: cli) }
+        return try credentials(fromSecurityOutput: output, status: process.terminationStatus,
+                               timedOut: process.terminationReason == .uncaughtSignal)
+    }
 
+    /// Maps the result of `security find-generic-password -w` to a token and plan.
+    static func credentials(fromSecurityOutput output: Data, status: Int32, timedOut: Bool) throws -> (token: String, plan: String?) {
+        let cli = ProviderID.claude.cliName
+        if timedOut { throw UsageError.keychainTimeout }
+        // `security` exits with 44 when the item does not exist, i.e. Claude Code is not signed in.
+        if status == 44 { throw UsageError.notSignedIn(cli: cli) }
         struct Credentials: Decodable {
             struct OAuth: Decodable { let accessToken: String; let subscriptionType: String? }
-            let claudeAiOauth: OAuth
+            let claudeAiOauth: OAuth?
         }
-        // `security` exits with 44 when the item does not exist, i.e. Claude Code is not signed in.
-        if process.terminationStatus == 44 { throw UsageError.notSignedIn(cli: id.cliName) }
-        guard process.terminationStatus == 0,
-              let credentials = try? JSONDecoder().decode(Credentials.self, from: output)
-        else { throw UsageError.credentialsUnreadable(cli: id.cliName) }
-        return (credentials.claudeAiOauth.accessToken, credentials.claudeAiOauth.subscriptionType)
+        guard status == 0, let credentials = try? JSONDecoder().decode(Credentials.self, from: output)
+        else { throw UsageError.credentialsUnreadable(cli: cli) }
+        // An item without a subscription login (API-key use, MCP OAuth data only) is not signed in.
+        guard let oauth = credentials.claudeAiOauth else { throw UsageError.notSignedIn(cli: cli) }
+        return (oauth.accessToken, oauth.subscriptionType)
     }
 
     private struct Response: Decodable {

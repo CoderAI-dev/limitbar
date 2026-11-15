@@ -41,6 +41,8 @@ import Testing
         #expect(text(2 * 3600) == "resets in 2h")
         #expect(text(86_400 + 4 * 3600 + 59) == "resets in 1d 4h")
         #expect(text(2 * 86_400) == "resets in 2d")
+        // Absurd timestamps (e.g. reset_at: 1e20) are clamped instead of trapping.
+        #expect(text(1e20) == "resets in 3650d")
     }
 
     @Test func failedStateKeepsSnapshot() {

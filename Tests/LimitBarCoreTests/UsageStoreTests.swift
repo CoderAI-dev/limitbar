@@ -88,6 +88,16 @@ private let snapshot = ProviderSnapshot(
         #expect(store.visibleOrder == store.order)
     }
 
+    @Test func cancelledFetchKeepsPreviousState() async {
+        let provider = FakeProvider(.codex, .success(snapshot))
+        let store = UsageStore(providers: [provider])
+        await store.refresh()
+        provider.setResult(.failure(CancellationError()))
+        await store.refresh()
+        #expect(store.states[.codex] == .loaded(snapshot))
+        #expect(store.isRefreshing == false)
+    }
+
     @Test func signingOutDropsSnapshot() async {
         let provider = FakeProvider(.codex, .success(snapshot))
         let store = UsageStore(providers: [provider])
@@ -122,7 +132,6 @@ private let snapshot = ProviderSnapshot(
     }
 
     @Test func nonUsageErrorKeepsLastSnapshot() async {
-        struct OtherError: Error {}
         let provider = FakeProvider(.claude, .success(snapshot))
         let store = UsageStore(providers: [provider])
         await store.refresh()
@@ -151,5 +160,28 @@ private let snapshot = ProviderSnapshot(
         _ = await (first, second)
         #expect(provider.fetchCount == 1)
         #expect(store.isRefreshing == false)
+    }
+
+    @Test func slowProviderDoesNotBlockOthers() async {
+        let slow = FakeProvider(.claude, .success(snapshot), delay: .milliseconds(300))
+        let fast = FakeProvider(.codex, .success(snapshot))
+        let store = UsageStore(providers: [slow, fast])
+        async let first: Void = store.refresh()
+        try? await Task.sleep(for: .milliseconds(50))
+        await store.refresh()
+        #expect(fast.fetchCount == 2)
+        #expect(slow.fetchCount == 0)
+        await first
+        #expect(slow.fetchCount == 1)
+        #expect(store.isRefreshing == false)
+    }
+
+    @Test func failedRefreshIsRetriedWhenStale() async {
+        let provider = FakeProvider(.grok, .failure(UsageError.http(status: 500)))
+        let store = UsageStore(providers: [provider])
+        await store.refresh()
+        #expect(store.lastUpdated == nil)
+        await store.refreshIfStale()
+        #expect(provider.fetchCount == 2)
     }
 }

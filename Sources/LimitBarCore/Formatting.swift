@@ -27,7 +27,8 @@ public func windowLabel(seconds: Int) -> String {
 
 /// "resets in 1d 4h", "resets in 3h 12m", "resets in 7m", or "resets soon".
 public func resetDescription(until date: Date, now: Date) -> String {
-    let seconds = Int(date.timeIntervalSince(now))
+    // Clamp before converting: a nonsensical far-future timestamp must not trap in Int(_:).
+    let seconds = Int(min(max(date.timeIntervalSince(now), 0), 3_650 * 86_400))
     guard seconds >= 60 else { return "resets soon" }
     let days = seconds / 86_400, hours = seconds % 86_400 / 3_600, minutes = seconds % 3_600 / 60
     let text: String

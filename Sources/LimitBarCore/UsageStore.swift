@@ -5,7 +5,8 @@ import Observation
 public final class UsageStore {
     public private(set) var states: [ProviderID: ProviderState] = [:]
     public private(set) var lastUpdated: Date?
-    public private(set) var isRefreshing = false
+    private var inFlight: Set<ProviderID> = []
+    public var isRefreshing: Bool { !inFlight.isEmpty }
 
     private let providers: [any UsageProvider]
     @ObservationIgnored private var autoRefreshTask: Task<Void, Never>?
@@ -44,23 +45,29 @@ public final class UsageStore {
         await refresh()
     }
 
-    /// Fetches all providers concurrently; each one updates independently.
+    /// Fetches all providers concurrently, skipping those still in flight from an earlier refresh;
+    /// each one updates independently. `lastUpdated` advances only if at least one succeeded.
     public func refresh() async {
-        guard !isRefreshing else { return }
-        isRefreshing = true
-        defer { isRefreshing = false }
+        let pending = providers.filter { !inFlight.contains($0.id) }
+        guard !pending.isEmpty else { return }
+        inFlight.formUnion(pending.map(\.id))
+        var anySucceeded = false
 
         await withTaskGroup(of: (ProviderID, Result<ProviderSnapshot, Error>).self) { group in
-            for provider in providers {
+            for provider in pending {
                 group.addTask {
                     do { return (provider.id, .success(try await provider.fetch())) }
                     catch { return (provider.id, .failure(error)) }
                 }
             }
             for await (id, result) in group {
+                inFlight.remove(id)
                 switch result {
                 case .success(let snapshot):
                     states[id] = .loaded(snapshot)
+                    anySucceeded = true
+                case .failure(is CancellationError):
+                    break // e.g. the popover closed mid-refresh: keep what was shown
                 case .failure(let error as UsageError):
                     if case .notSignedIn = error {
                         states[id] = .unavailable(message: error.errorDescription ?? "Not signed in")
@@ -72,6 +79,6 @@ public final class UsageStore {
                 }
             }
         }
-        lastUpdated = Date()
+        if anySucceeded { lastUpdated = Date() }
     }
 }
