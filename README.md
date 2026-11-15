@@ -1,9 +1,6 @@
-<p align="center"><img src="Resources/AppIcon.png" width="128" alt="LimitBar icon"></p>
+<p align="center"><img src="docs/social-preview.png" alt="LimitBar — AI usage monitor for your Mac menu bar: Claude Code, Codex and Grok usage limits with progress bars and pace tracking"></p>
 
-<h1 align="center">LimitBar</h1>
-
-<p align="center"><b>AI usage monitor for your Mac menu bar.</b><br>
-Track Claude Code, OpenAI Codex and Grok usage limits with live progress bars —
+<p align="center">Track Claude Code, OpenAI Codex and Grok usage limits with live progress bars —
 and see at a glance whether you are on pace or about to hit the limit before the reset.</p>
 
 <p align="center">
