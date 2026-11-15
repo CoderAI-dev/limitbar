@@ -10,7 +10,12 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(store.visibleOrder.enumerated()), id: \.element) { index, id in
                 if index > 0 { Divider().padding(.vertical, 10) }
-                ProviderSection(id: id, state: store.states[id] ?? .loading)
+                ProviderSection(
+                    id: id,
+                    state: store.states[id] ?? .loading,
+                    isRefreshing: store.isRefreshing,
+                    onRetry: { Task { await store.refresh() } }
+                )
             }
             Divider().padding(.top, 12).padding(.bottom, 8)
             footer

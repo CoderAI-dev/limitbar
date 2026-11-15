@@ -84,7 +84,7 @@ Data refreshes every 5 minutes, when the popover opens (if older than 60 s), and
 **Token policy.** LimitBar only reads the tokens the CLIs already store and sends each one only
 to its own provider (redirects are refused, so no header ever leaves the provider's host). It never refreshes, writes, logs or displays them, and it has no server or
 telemetry of its own. When a token has expired, the popover asks you to run that CLI once, which
-refreshes it.
+refreshes it; then click the retry icon next to the message to update right away.
 
 Credential files must be regular files of at most 1 MiB; symlinks and special files (including
 FIFOs) are rejected.

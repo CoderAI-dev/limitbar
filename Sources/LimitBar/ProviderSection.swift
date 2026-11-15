@@ -4,6 +4,8 @@ import SwiftUI
 struct ProviderSection: View {
     let id: ProviderID
     let state: ProviderState
+    let isRefreshing: Bool
+    let onRetry: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -29,11 +31,28 @@ struct ProviderSection: View {
                     .opacity(state.isStale ? 0.45 : 1)
             }
             if let message = errorMessage {
-                Label(message, systemImage: "exclamationmark.triangle")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    if case .failed = state { retryButton }
+                }
             }
+        }
+    }
+
+    /// Retrying right away saves waiting for the next automatic refresh, e.g. after re-running the CLI.
+    @ViewBuilder private var retryButton: some View {
+        if isRefreshing {
+            ProgressView().controlSize(.mini)
+        } else {
+            Button(action: onRetry) { Image(systemName: "arrow.clockwise") }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .focusable(false)
+                .help("Retry")
         }
     }
 
