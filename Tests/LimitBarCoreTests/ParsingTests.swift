@@ -141,6 +141,13 @@ private func json(_ s: String) -> Data { Data(s.utf8) }
         #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json("not json")) }
         #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json("[1]")) }
     }
+
+    @Test func planFromSettings() {
+        #expect(GrokProvider.parsePlan(json(#"{"subscription_tier_display":"SuperGrok Heavy","subscription_tier":null}"#)) == "SuperGrok Heavy")
+        #expect(GrokProvider.parsePlan(json(#"{"subscription_tier_display":"   ","subscription_tier":"supergrok"}"#)) == "supergrok")
+        #expect(GrokProvider.parsePlan(json(#"{"subscription_tier_display":null}"#)) == nil)
+        #expect(GrokProvider.parsePlan(json("not json")) == nil)
+    }
 }
 
 @Suite struct AntigravityCredentialsTests {
@@ -195,56 +202,120 @@ private func json(_ s: String) -> Data { Data(s.utf8) }
         #expect(free.plan == "free")
     }
 
-    @Test func mergesSharedQuotaGroupsAndIgnoresInternalAndTabModels() throws {
-        let now = try #require(parseISO8601("2026-11-23T11:37:00Z"))
+    @Test func showsOnlyMainGeminiWeeklyWhenFiveHourIsCalm() throws {
+        let now = try #require(parseISO8601("2026-11-23T15:33:19Z"))
         let data = json("""
-        {"models":{
-          "gemini-2.5-pro":{"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
-            "quotaInfo":{"remainingFraction":0.92,"resetTime":"2026-11-23T16:30:00Z"}},
-          "gemini-3-flash":{"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
-            "quotaInfo":{"remainingFraction":0.92,"resetTime":"2026-11-23T16:30:00Z"}},
-          "claude-opus-5-5-high":{"recommended":true,"modelProvider":"MODEL_PROVIDER_ANTHROPIC",
-            "quotaInfo":{"remainingFraction":1,"resetTime":"2026-11-23T16:37:00Z"}},
-          "gpt-oss-120b-medium":{"recommended":true,"modelProvider":"MODEL_PROVIDER_OPENAI",
-            "quotaInfo":{"remainingFraction":1,"resetTime":"2026-11-23T16:37:00Z"}},
-          "chat_20706":{"isInternal":true,"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
-            "quotaInfo":{"remainingFraction":0.1,"resetTime":"2026-11-23T16:30:00Z"}},
-          "tab_flash_lite_preview":{"modelProvider":"MODEL_PROVIDER_GOOGLE",
-            "quotaInfo":{"remainingFraction":1}}
-        }}
+        {"groups":[
+          {"displayName":"Gemini Models","buckets":[
+            {"bucketId":"gemini-weekly","window":"weekly","resetTime":"2026-11-30T11:30:19Z","remainingFraction":0.8989852},
+            {"bucketId":"gemini-5h","window":"5h","resetTime":"2026-11-23T16:30:19Z","remainingFraction":0.64644825}
+          ]},
+          {"displayName":"Claude and GPT models","buckets":[
+            {"bucketId":"3p-weekly","window":"weekly","resetTime":"2026-11-30T15:32:25Z","remainingFraction":0.4},
+            {"bucketId":"3p-5h","window":"5h","resetTime":"2026-11-23T20:32:25Z","remainingFraction":0.1}
+          ]},
+          {"displayName":"Gemini 4 Argon","buckets":[
+            {"bucketId":"gemini-argon-wtu-weekly","window":"weekly","resetTime":"2026-11-30T15:32:25Z","remainingFraction":0.2}
+          ]}
+        ]}
         """)
-        let snapshot = try AntigravityProvider.parseModels(data, now: now)
-        #expect(snapshot.windows.map(\.label) == ["Gemini", "Claude · GPT"])
-        #expect(abs(snapshot.windows[0].usedPercent - 8) < 0.001)
-        #expect(snapshot.windows[1].usedPercent == 0)
-        #expect(snapshot.windows[0].resetsAt == parseISO8601("2026-11-23T16:30:00Z"))
-        #expect(snapshot.windows.map(\.duration) == [18_000, 18_000])
+        let snapshot = try AntigravityProvider.parseQuotaSummary(data, now: now)
+        #expect(snapshot.windows.map(\.label) == ["Week"])
+        #expect(abs(snapshot.windows[0].usedPercent - 10.10148) < 0.001)
+        #expect(snapshot.windows[0].duration == 604_800)
+        #expect(snapshot.windows[0].resetsAt == parseISO8601("2026-11-30T11:30:19Z"))
         #expect(snapshot.fetchedAt == now)
     }
 
-    @Test func splitsDivergingGroupsAndHandlesExhaustedOmittedFraction() throws {
-        let now = try #require(parseISO8601("2026-11-23T11:37:00Z"))
-        let data = json("""
-        {"models":{
-          "gemini-2.5-pro":{"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
-            "quotaInfo":{"resetTime":"2026-11-23T16:30:00Z"}},
-          "gemini-3-flash":{"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
-            "quotaInfo":{"remainingFraction":0.6,"resetTime":"2026-11-23T16:30:00Z"}},
-          "claude-sonnet-5-5-high":{"recommended":true,"modelProvider":"MODEL_PROVIDER_ANTHROPIC",
-            "quotaInfo":{"remainingFraction":0.25,"resetTime":"2026-11-29T11:37:00Z"}},
-          "gpt-oss-120b-medium":{"recommended":true,"modelProvider":"MODEL_PROVIDER_OPENAI",
-            "quotaInfo":{"remainingFraction":0.8,"resetTime":"2026-11-23T16:30:00Z"}}
-        }}
-        """)
-        let snapshot = try AntigravityProvider.parseModels(data, now: now)
-        #expect(snapshot.windows.map(\.label) == ["Gemini Pro", "Gemini Flash", "Claude", "GPT"])
-        for (actual, expected) in zip(snapshot.windows.map(\.usedPercent), [100.0, 40.0, 75.0, 20.0]) {
-            #expect(abs(actual - expected) < 0.001)
+    @Test func showsFiveHourWhenOverFiftyPercentAndAtLeastTwentyOverPace() throws {
+        // 4h remaining out of 5h -> 1h elapsed -> 20% pace.
+        let now = try #require(parseISO8601("2026-11-23T12:00:00Z"))
+        let fourHoursLeft = "2026-11-23T16:00:00Z"
+        let twoHoursLeft = "2026-11-23T14:00:00Z" // 60% pace
+
+        func payload(fiveHourRemaining: Double, fiveHourReset: String) -> Data {
+            json("""
+            {"groups":[
+              {"displayName":"Gemini Models","buckets":[
+                {"bucketId":"gemini-weekly","window":"weekly","resetTime":"2026-11-30T12:00:00Z","remainingFraction":0.8},
+                {"bucketId":"gemini-5h","window":"5h","resetTime":"\(fiveHourReset)","remainingFraction":\(fiveHourRemaining)}
+              ]}
+            ]}
+            """)
         }
-        #expect(snapshot.windows.map(\.duration) == [18_000, 18_000, 604_800, 18_000])
+
+        // 55% used at 20% pace (+35% over pace, > 50%) -> shown.
+        let triggered = try AntigravityProvider.parseQuotaSummary(payload(fiveHourRemaining: 0.45, fiveHourReset: fourHoursLeft), now: now)
+        #expect(triggered.windows.map(\.label) == ["Week", "5h"])
+        #expect(triggered.windows.map(\.duration) == [604_800, 18_000])
+        #expect(abs(triggered.windows[1].usedPercent - 55) < 0.001)
+
+        // 45% used at 20% pace (+25% over pace, <= 50%) -> hidden.
+        let underFifty = try AntigravityProvider.parseQuotaSummary(payload(fiveHourRemaining: 0.55, fiveHourReset: fourHoursLeft), now: now)
+        #expect(underFifty.windows.map(\.label) == ["Week"])
+
+        // 70% used at 60% pace (> 50%, only +10% over pace) -> hidden.
+        let slightOverPace = try AntigravityProvider.parseQuotaSummary(payload(fiveHourRemaining: 0.30, fiveHourReset: twoHoursLeft), now: now)
+        #expect(slightOverPace.windows.map(\.label) == ["Week"])
+    }
+
+    @Test func showsFiveHourWhenAtOrAboveEightyPercentOrExhausted() throws {
+        // 30m remaining out of 5h -> 90% pace.
+        let now = try #require(parseISO8601("2026-11-23T12:00:00Z"))
+        let data = json("""
+        {"groups":[
+          {"displayName":"Gemini Models","buckets":[
+            {"bucketId":"gemini-weekly","window":"weekly","resetTime":"2026-11-30T12:00:00Z","remainingFraction":0.7},
+            {"bucketId":"gemini-5h","window":"5h","resetTime":"2026-11-23T12:30:00Z","remainingFraction":0.2}
+          ]}
+        ]}
+        """)
+        let high = try AntigravityProvider.parseQuotaSummary(data, now: now)
+        #expect(high.windows.map(\.label) == ["Week", "5h"])
+        #expect(abs(high.windows[1].usedPercent - 80) < 0.001)
+
+        let exhausted = json("""
+        {"groups":[
+          {"displayName":"Gemini Models","buckets":[
+            {"bucketId":"gemini-weekly","window":"weekly","resetTime":"2026-11-30T12:00:00Z"},
+            {"bucketId":"gemini-5h","window":"5h","resetTime":"2026-11-23T12:30:00Z"}
+          ]}
+        ]}
+        """)
+        let snapshot = try AntigravityProvider.parseQuotaSummary(exhausted, now: now)
+        #expect(snapshot.windows.map(\.label) == ["Week", "5h"])
+        #expect(snapshot.windows.map(\.usedPercent) == [100, 100])
+    }
+
+    @Test func matchesByDisplayNameAndHandlesMissingWeekly() throws {
+        let now = try #require(parseISO8601("2026-11-23T12:00:00Z"))
+        let byDisplayName = json("""
+        {"groups":[
+          {"displayName":"Gemini 4 Argon","buckets":[
+            {"bucketId":"gemini-argon-wtu-weekly","window":"weekly","resetTime":"2026-11-30T12:00:00Z","remainingFraction":0.1}
+          ]},
+          {"displayName":"Gemini Models","buckets":[
+            {"bucketId":"custom-weekly","window":"weekly","resetTime":"2026-11-30T12:00:00Z","remainingFraction":0.75}
+          ]}
+        ]}
+        """)
+        let weeklyOnly = try AntigravityProvider.parseQuotaSummary(byDisplayName, now: now)
+        #expect(weeklyOnly.windows.map(\.label) == ["Week"])
+        #expect(abs(weeklyOnly.windows[0].usedPercent - 25) < 0.001)
+
+        let fiveHourOnlyData = json("""
+        {"groups":[
+          {"displayName":"Gemini Models","buckets":[
+            {"bucketId":"gemini-5h","window":"5h","resetTime":"2026-11-23T16:00:00Z","remainingFraction":0.9}
+          ]}
+        ]}
+        """)
+        let fiveHourOnly = try AntigravityProvider.parseQuotaSummary(fiveHourOnlyData, now: now)
+        #expect(fiveHourOnly.windows.map(\.label) == ["5h"])
+        #expect(abs(fiveHourOnly.windows[0].usedPercent - 10) < 0.001)
     }
 
     @Test func malformedThrows() {
-        #expect(throws: UsageError.badResponse) { try AntigravityProvider.parseModels(json("[1]"), now: now) }
+        #expect(throws: UsageError.badResponse) { try AntigravityProvider.parseQuotaSummary(json("[1]"), now: now) }
     }
 }

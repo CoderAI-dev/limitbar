@@ -12,7 +12,7 @@ struct ProviderSection: View {
             HStack(spacing: 6) {
                 Text(id.displayName).font(.headline)
                 if let plan = state.snapshot?.plan {
-                    Text(plan.capitalized)
+                    Text(formatPlan(plan))
                         .font(.caption2.weight(.medium))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)

@@ -75,4 +75,11 @@ import Testing
         #expect(paceDescription(usedPercent: 20, pacePercent: 28.4) == "8% spare")
         #expect(paceDescription(usedPercent: 30, pacePercent: 30.3) == "on pace")
     }
+
+    @Test func planFormatting() {
+        #expect(formatPlan("pro") == "Pro")
+        #expect(formatPlan("max") == "Max")
+        #expect(formatPlan("SuperGrok Heavy") == "SuperGrok Heavy")
+        #expect(formatPlan("Google AI Pro") == "Google AI Pro")
+    }
 }

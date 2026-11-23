@@ -49,3 +49,9 @@ public func paceDescription(usedPercent: Double, pacePercent: Double) -> String 
     if delta < 0 { return "\(-delta)% spare" }
     return "on pace"
 }
+
+/// Formats a subscription plan name for display: capitalizes all-lowercase names ("pro" → "Pro"),
+/// while preserving intentional mixed casing ("SuperGrok Heavy", "Google AI Pro").
+public func formatPlan(_ plan: String) -> String {
+    plan == plan.lowercased() ? plan.capitalized : plan
+}

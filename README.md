@@ -44,7 +44,7 @@ usage across the week instead of getting rate-limited on day five.
 | **Claude Code** (Anthropic) | `claude` CLI with a Claude subscription (Pro / Max) | 5-hour session, weekly, weekly per model |
 | **Codex** (OpenAI) | `codex` CLI signed in with ChatGPT | 5-hour, weekly |
 | **Grok** (xAI) | `grok` CLI | weekly / monthly credit usage |
-| **Antigravity** (Google) | `agy` CLI signed in with Google | rolling quota per model group (Gemini, Claude · GPT) |
+| **Antigravity** (Google) | `agy` CLI signed in with Google | Gemini weekly limit (plus 5-hour when close to the limit) |
 
 Providers whose CLI is not signed in are hidden from the menu bar and the popover, and appear
 automatically after you sign in (Claude Code used without a subscription login and Codex used with
@@ -78,8 +78,8 @@ popover. Run the unit tests with `swift test`. The icon is rendered by `scripts/
 |----------|-------------------------|----------|
 | Claude | Keychain item `Claude Code-credentials`, read through `/usr/bin/security` | `GET https://api.anthropic.com/api/oauth/usage` |
 | Codex | `~/.codex/auth.json` | `GET https://chatgpt.com/backend-api/wham/usage` |
-| Grok | `~/.grok/auth.json` | `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits` |
-| Antigravity | Keychain item `gemini` / `antigravity`, read through `/usr/bin/security` | `POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`, `v1internal:fetchAvailableModels` |
+| Grok | `~/.grok/auth.json` | `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits`, `v1/settings` |
+| Antigravity | Keychain item `gemini` / `antigravity`, read through `/usr/bin/security` | `POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`, `v1internal:retrieveUserQuotaSummary` |
 
 Data refreshes every 5 minutes, when the popover opens (if older than 60 s), and on demand.
 

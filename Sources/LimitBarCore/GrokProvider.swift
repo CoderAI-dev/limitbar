@@ -7,12 +7,20 @@ public struct GrokProvider: UsageProvider {
     public func fetch() async throws -> ProviderSnapshot {
         let file = try HTTP.readHomeFile(".grok/auth.json", cli: id.cliName)
         guard let key = try Self.bearerKey(fromAuthFile: file) else { throw UsageError.notSignedIn(cli: id.cliName) }
-        let data = try await HTTP.get(
+        let headers = ["Authorization": "Bearer \(key)"]
+        async let billingData = HTTP.get(
             URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!,
-            headers: ["Authorization": "Bearer \(key)"],
+            headers: headers,
             cli: id.cliName
         )
-        return try Self.parse(data, now: Date())
+        async let settingsData = try? HTTP.get(
+            URL(string: "https://cli-chat-proxy.grok.com/v1/settings")!,
+            headers: headers,
+            cli: id.cliName
+        )
+        let snapshot = try Self.parse(try await billingData, now: Date())
+        let plan = await settingsData.flatMap(Self.parsePlan)
+        return ProviderSnapshot(windows: snapshot.windows, plan: plan, fetchedAt: snapshot.fetchedAt)
     }
 
     /// The auth file is keyed by `<issuer>::<id>`. Only x.ai-issued tokens are sent to the endpoint;
@@ -26,6 +34,18 @@ public struct GrokProvider: UsageProvider {
         guard let key = issuerKeys.lazy.compactMap({ (entries[$0] as? [String: Any])?["key"] as? String }).first
         else { throw unreadable }
         return key
+    }
+
+    private struct SettingsResponse: Decodable {
+        let subscription_tier_display: String?
+        let subscription_tier: String?
+    }
+
+    static func parsePlan(_ data: Data) -> String? {
+        guard let settings = try? JSONDecoder().decode(SettingsResponse.self, from: data) else { return nil }
+        return [settings.subscription_tier_display, settings.subscription_tier]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
     }
 
     private struct Response: Decodable {

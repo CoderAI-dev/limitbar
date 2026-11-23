@@ -5,7 +5,9 @@ public struct AntigravityProvider: UsageProvider {
     public init() {}
 
     private static let baseURL = "https://daily-cloudcode-pa.googleapis.com/v1internal"
-    private static let userAgent = "antigravity/1.0"
+    private static let userAgent = "antigravity/hub/2.24.0"
+    private static let fiveHourDuration: TimeInterval = 18_000
+    private static let weeklyDuration: TimeInterval = 604_800
 
     public func fetch() async throws -> ProviderSnapshot {
         let token = try await readCredentials()
@@ -15,14 +17,14 @@ public struct AntigravityProvider: UsageProvider {
         let loadData = try await HTTP.post(URL(string: "\(Self.baseURL):loadCodeAssist")!, body: loadBody, headers: headers, cli: id.cliName)
         let account = try Self.parseLoadCodeAssist(loadData)
 
-        let modelsBody: Data
+        let summaryBody: Data
         if let project = account.project {
-            modelsBody = try JSONEncoder().encode(["project": project])
+            summaryBody = try JSONEncoder().encode(["project": project])
         } else {
-            modelsBody = Data("{}".utf8)
+            summaryBody = Data("{}".utf8)
         }
-        let modelsData = try await HTTP.post(URL(string: "\(Self.baseURL):fetchAvailableModels")!, body: modelsBody, headers: headers, cli: id.cliName)
-        let snapshot = try Self.parseModels(modelsData, now: Date())
+        let summaryData = try await HTTP.post(URL(string: "\(Self.baseURL):retrieveUserQuotaSummary")!, body: summaryBody, headers: headers, cli: id.cliName)
+        let snapshot = try Self.parseQuotaSummary(summaryData, now: Date())
         return ProviderSnapshot(windows: snapshot.windows, plan: account.plan, fetchedAt: snapshot.fetchedAt)
     }
 
@@ -86,139 +88,61 @@ public struct AntigravityProvider: UsageProvider {
         }
     }
 
-    private struct ModelsResponse: Decodable {
-        struct QuotaInfo: Decodable {
+    private struct QuotaSummaryResponse: Decodable {
+        struct Bucket: Decodable {
+            let bucketId: String?
+            let window: String?
             let remainingFraction: Double?
             let resetTime: String?
             let isExhausted: Bool?
         }
-        struct Model: Decodable {
-            let isInternal: Bool?
-            let recommended: Bool?
-            let modelProvider: String?
-            let quotaInfo: QuotaInfo?
+        struct Group: Decodable {
+            let displayName: String?
+            let buckets: [Bucket]?
         }
-        let models: [String: Model]?
+        let groups: [Group]?
     }
 
-    private enum Bucket {
-        case geminiPro, geminiFlash, claude, gpt
-    }
-
-    private struct BucketQuota {
-        var usedPercent: Double
-        var resetsAt: Date?
-
-        mutating func merge(usedPercent: Double, resetsAt: Date?) {
-            if usedPercent > self.usedPercent {
-                self.usedPercent = usedPercent
-            }
-            if let resetsAt, self.resetsAt.map({ resetsAt < $0 }) ?? true {
-                self.resetsAt = resetsAt
-            }
+    public static func parseQuotaSummary(_ data: Data, now: Date) throws -> ProviderSnapshot {
+        let response = try decode(QuotaSummaryResponse.self, from: data)
+        let groups = response.groups ?? []
+        let mainGeminiGroup = groups.first { group in
+            (group.buckets ?? []).contains { $0.bucketId == "gemini-weekly" || $0.bucketId == "gemini-5h" }
+        } ?? groups.first { group in
+            group.displayName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "gemini models"
         }
 
-        func matches(_ other: BucketQuota) -> Bool {
-            abs(usedPercent - other.usedPercent) < 0.01 && resetsAt == other.resetsAt
-        }
-    }
-
-    public static func parseModels(_ data: Data, now: Date) throws -> ProviderSnapshot {
-        let response = try decode(ModelsResponse.self, from: data)
-        let allModels = (response.models ?? [:]).filter { id, model in
-            model.isInternal != true && model.quotaInfo != nil && !id.hasPrefix("tab_")
-        }
-        let hasRecommended = allModels.values.contains { $0.recommended == true }
-        let eligible = allModels.filter { _, model in
-            if hasRecommended {
-                return model.recommended == true
-            }
-            return model.quotaInfo?.resetTime != nil || model.quotaInfo?.isExhausted == true
+        guard let buckets = mainGeminiGroup?.buckets else {
+            return ProviderSnapshot(windows: [], plan: nil, fetchedAt: now)
         }
 
-        var buckets: [Bucket: BucketQuota] = [:]
-        for (modelID, model) in eligible {
-            guard let quota = model.quotaInfo else { continue }
-            guard let bucket = classify(modelID: modelID, provider: model.modelProvider) else { continue }
-            // In proto3 JSON, remainingFraction: 0 is omitted when a bucket is exhausted.
-            let remaining = quota.remainingFraction ?? (quota.resetTime != nil || quota.isExhausted == true ? 0 : 1)
-            let usedPercent = min(max((1 - remaining) * 100, 0), 100)
-            let resetsAt = quota.resetTime.flatMap(parseISO8601)
-            if var existing = buckets[bucket] {
-                existing.merge(usedPercent: usedPercent, resetsAt: resetsAt)
-                buckets[bucket] = existing
-            } else {
-                buckets[bucket] = BucketQuota(usedPercent: usedPercent, resetsAt: resetsAt)
-            }
-        }
+        let weeklyBucket = buckets.first { $0.window?.lowercased() == "weekly" || $0.bucketId == "gemini-weekly" }
+        let fiveHourBucket = buckets.first { $0.window?.lowercased() == "5h" || $0.bucketId == "gemini-5h" }
 
         var windows: [LimitWindow] = []
-        appendGroup(
-            first: (.geminiPro, "Gemini Pro"),
-            second: (.geminiFlash, "Gemini Flash"),
-            mergedLabel: "Gemini",
-            singleUsesMerged: true,
-            from: buckets,
-            now: now,
-            into: &windows
-        )
-        appendGroup(
-            first: (.claude, "Claude"),
-            second: (.gpt, "GPT"),
-            mergedLabel: "Claude · GPT",
-            singleUsesMerged: false,
-            from: buckets,
-            now: now,
-            into: &windows
-        )
+        if let weeklyBucket {
+            windows.append(makeWindow(label: "Week", bucket: weeklyBucket, duration: Self.weeklyDuration))
+        }
+        if let fiveHourBucket {
+            let fiveHour = makeWindow(label: "5h", bucket: fiveHourBucket, duration: Self.fiveHourDuration)
+            if weeklyBucket == nil || shouldShowFiveHour(fiveHour, now: now) {
+                windows.append(fiveHour)
+            }
+        }
         return ProviderSnapshot(windows: windows, plan: nil, fetchedAt: now)
     }
 
-    private static func classify(modelID: String, provider: String?) -> Bucket? {
-        let lower = modelID.lowercased()
-        if provider == "MODEL_PROVIDER_GOOGLE" || lower.hasPrefix("gemini") {
-            return lower.contains("flash") ? .geminiFlash : .geminiPro
-        }
-        if provider == "MODEL_PROVIDER_ANTHROPIC" || lower.hasPrefix("claude") {
-            return .claude
-        }
-        if provider == "MODEL_PROVIDER_OPENAI" || lower.hasPrefix("gpt") {
-            return .gpt
-        }
-        return nil
+    static func shouldShowFiveHour(_ window: LimitWindow, now: Date) -> Bool {
+        if window.usedPercent >= 80 { return true }
+        guard window.usedPercent > 50, let pace = window.pacePercent(now: now) else { return false }
+        return window.usedPercent - pace >= 20
     }
 
-    private static func appendGroup(
-        first: (Bucket, String),
-        second: (Bucket, String),
-        mergedLabel: String,
-        singleUsesMerged: Bool,
-        from buckets: [Bucket: BucketQuota],
-        now: Date,
-        into windows: inout [LimitWindow]
-    ) {
-        switch (buckets[first.0], buckets[second.0]) {
-        case let (a?, b?) where a.matches(b):
-            windows.append(makeWindow(label: mergedLabel, quota: a, now: now))
-        case let (a?, b?):
-            windows.append(makeWindow(label: first.1, quota: a, now: now))
-            windows.append(makeWindow(label: second.1, quota: b, now: now))
-        case let (a?, nil):
-            windows.append(makeWindow(label: singleUsesMerged ? mergedLabel : first.1, quota: a, now: now))
-        case let (nil, b?):
-            windows.append(makeWindow(label: singleUsesMerged ? mergedLabel : second.1, quota: b, now: now))
-        case (nil, nil):
-            break
-        }
-    }
-
-    private static func makeWindow(label: String, quota: BucketQuota, now: Date) -> LimitWindow {
-        let duration: TimeInterval? = quota.resetsAt.flatMap { resetsAt in
-            let remaining = resetsAt.timeIntervalSince(now)
-            if remaining <= 18_000 + 300 { return 18_000 }
-            if remaining <= 604_800 + 300 { return 604_800 }
-            return nil
-        }
-        return LimitWindow(label: label, usedPercent: quota.usedPercent, resetsAt: quota.resetsAt, duration: duration)
+    private static func makeWindow(label: String, bucket: QuotaSummaryResponse.Bucket, duration: TimeInterval) -> LimitWindow {
+        // In proto3 JSON, remainingFraction: 0 is omitted when a bucket is exhausted.
+        let remaining = bucket.remainingFraction ?? (bucket.resetTime != nil || bucket.isExhausted == true ? 0 : 1)
+        let usedPercent = min(max((1 - remaining) * 100, 0), 100)
+        let resetsAt = bucket.resetTime.flatMap(parseISO8601)
+        return LimitWindow(label: label, usedPercent: usedPercent, resetsAt: resetsAt, duration: duration)
     }
 }
