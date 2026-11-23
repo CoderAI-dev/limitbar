@@ -11,7 +11,7 @@ public final class UsageStore {
     private let providers: [any UsageProvider]
     @ObservationIgnored private var autoRefreshTask: Task<Void, Never>?
 
-    public init(providers: [any UsageProvider] = [ClaudeProvider(), CodexProvider(), GrokProvider()]) {
+    public init(providers: [any UsageProvider] = [ClaudeProvider(), CodexProvider(), GrokProvider(), AntigravityProvider()]) {
         self.providers = providers
         for provider in providers { states[provider.id] = .loading }
     }

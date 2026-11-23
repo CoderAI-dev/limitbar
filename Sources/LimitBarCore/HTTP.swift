@@ -22,6 +22,19 @@ enum HTTP {
     /// GETs `url` and returns the body. Never includes header values in errors.
     static func get(_ url: URL, headers: [String: String], cli: String) async throws -> Data {
         var request = URLRequest(url: url)
+        return try await send(&request, headers: headers, cli: cli)
+    }
+
+    /// POSTs `body` to `url` and returns the response body. Never includes header values in errors.
+    static func post(_ url: URL, body: Data, headers: [String: String], cli: String) async throws -> Data {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = body
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return try await send(&request, headers: headers, cli: cli)
+    }
+
+    private static func send(_ request: inout URLRequest, headers: [String: String], cli: String) async throws -> Data {
         request.setValue("LimitBar", forHTTPHeaderField: "User-Agent")
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
 
@@ -43,6 +56,40 @@ enum HTTP {
             throw CancellationError()
         } catch let error as URLError {
             throw UsageError.network(error.code == .timedOut ? "Request timed out" : "Network error (\(error.code.rawValue))")
+        }
+    }
+
+    /// Reads a generic password from the macOS Keychain via `/usr/bin/security`, off the Swift
+    /// concurrency pool, with a 2-minute timeout and `maxSize` limit.
+    static func readKeychainPassword(service: String, account: String? = nil, cli: String) async throws -> (output: Data, status: Int32, timedOut: Bool) {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global().async {
+                continuation.resume(with: Result {
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+                    var args = ["find-generic-password", "-s", service]
+                    if let account { args += ["-a", account] }
+                    args.append("-w")
+                    process.arguments = args
+                    let stdout = Pipe()
+                    process.standardOutput = stdout
+                    process.standardError = FileHandle.nullDevice
+                    do { try process.run() } catch { throw UsageError.credentialsUnreadable(cli: cli) }
+                    // An unanswered keychain prompt would block forever; kill the process after 2 minutes, which
+                    // leaves time to type the keychain password. Other providers' states update meanwhile.
+                    let timeout = DispatchWorkItem { [process] in process.terminate() }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeout)
+                    // Read (up to the size limit) before waiting so a full pipe cannot deadlock; the read ends at
+                    // EOF, on exit or kill. Oversized output is not a login: stop the process and reject it.
+                    let output = (try? stdout.fileHandleForReading.read(upToCount: maxSize + 1)) ?? Data()
+                    let oversized = output.count > maxSize
+                    if oversized { process.terminate() }
+                    process.waitUntilExit()
+                    timeout.cancel()
+                    if oversized { throw UsageError.credentialsUnreadable(cli: cli) }
+                    return (output, process.terminationStatus, process.terminationReason == .uncaughtSignal)
+                })
+            }
         }
     }
 

@@ -1,13 +1,14 @@
 import Foundation
 
 public enum ProviderID: String, CaseIterable, Sendable {
-    case claude, codex, grok
+    case claude, codex, grok, antigravity
 
     public var displayName: String {
         switch self {
         case .claude: "Claude"
         case .codex: "Codex"
         case .grok: "Grok"
+        case .antigravity: "Antigravity"
         }
     }
 
@@ -17,10 +18,16 @@ public enum ProviderID: String, CaseIterable, Sendable {
         case .claude: "C"
         case .codex: "X"
         case .grok: "G"
+        case .antigravity: "A"
         }
     }
 
-    public var cliName: String { rawValue }
+    public var cliName: String {
+        switch self {
+        case .antigravity: "agy"
+        default: rawValue
+        }
+    }
 }
 
 public struct LimitWindow: Equatable, Sendable {

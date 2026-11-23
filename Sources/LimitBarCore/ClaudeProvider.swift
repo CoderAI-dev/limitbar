@@ -16,40 +16,10 @@ public struct ClaudeProvider: UsageProvider {
     }
 
     private func readCredentials() async throws -> (token: String, plan: String?) {
-        // The read blocks for up to 2 minutes while a keychain prompt is open, so run it off the
-        // Swift concurrency pool.
-        try await withCheckedThrowingContinuation { continuation in
-            DispatchQueue.global().async {
-                continuation.resume(with: Result { try Self.readKeychainItem() })
-            }
-        }
-    }
-
-    private static func readKeychainItem() throws -> (token: String, plan: String?) {
-        let cli = ProviderID.claude.cliName
         // Use the `security` CLI rather than SecItem: it is already on the item's ACL, so there is no
         // prompt, whereas an ad-hoc-signed app would be re-prompted after every rebuild.
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch { throw UsageError.credentialsUnreadable(cli: cli) }
-        // An unanswered keychain prompt would block forever; kill the process after 2 minutes, which
-        // leaves time to type the keychain password. Other providers' states update meanwhile.
-        let timeout = DispatchWorkItem { [process] in process.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 120, execute: timeout)
-        // Read (up to the size limit) before waiting so a full pipe cannot deadlock; the read ends at
-        // EOF, on exit or kill. Oversized output is not a login: stop the process and reject it.
-        let output = (try? stdout.fileHandleForReading.read(upToCount: HTTP.maxSize + 1)) ?? Data()
-        let oversized = output.count > HTTP.maxSize
-        if oversized { process.terminate() }
-        process.waitUntilExit()
-        timeout.cancel()
-        if oversized { throw UsageError.credentialsUnreadable(cli: cli) }
-        return try credentials(fromSecurityOutput: output, status: process.terminationStatus,
-                               timedOut: process.terminationReason == .uncaughtSignal)
+        let result = try await HTTP.readKeychainPassword(service: "Claude Code-credentials", cli: id.cliName)
+        return try Self.credentials(fromSecurityOutput: result.output, status: result.status, timedOut: result.timedOut)
     }
 
     /// Maps the result of `security find-generic-password -w` to a token and plan.

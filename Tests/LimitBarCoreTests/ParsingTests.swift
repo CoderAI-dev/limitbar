@@ -141,5 +141,110 @@ private func json(_ s: String) -> Data { Data(s.utf8) }
         #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json("not json")) }
         #expect(throws: UsageError.credentialsUnreadable(cli: "grok")) { try GrokProvider.bearerKey(fromAuthFile: json("[1]")) }
     }
+}
 
+@Suite struct AntigravityCredentialsTests {
+    private func credentials(_ raw: String, status: Int32 = 0, timedOut: Bool = false) throws -> String {
+        try AntigravityProvider.credentials(fromSecurityOutput: Data(raw.utf8), status: status, timedOut: timedOut)
+    }
+
+    @Test func goKeyringBase64Payload() throws {
+        let payload = #"{"token":{"access_token":"ya29.test"},"auth_method":"oauth"}"#
+        let encoded = "go-keyring-base64:" + Data(payload.utf8).base64EncodedString() + "\n"
+        #expect(try credentials(encoded) == "ya29.test")
+    }
+
+    @Test func rawJSONPayload() throws {
+        #expect(try credentials(#"{"token":{"access_token":"ya29.raw"}}"#) == "ya29.raw")
+    }
+
+    @Test func missingItemIsNotSignedIn() {
+        #expect(throws: UsageError.notSignedIn(cli: "agy")) { try credentials("", status: 44) }
+    }
+
+    @Test func missingTokenIsNotSignedIn() {
+        #expect(throws: UsageError.notSignedIn(cli: "agy")) { try credentials(#"{"token":null}"#) }
+        #expect(throws: UsageError.notSignedIn(cli: "agy")) { try credentials(#"{"token":{"access_token":""}}"#) }
+    }
+
+    @Test func invalidBase64OrJSONIsUnreadable() {
+        #expect(throws: UsageError.credentialsUnreadable(cli: "agy")) { try credentials("go-keyring-base64:%%%") }
+        #expect(throws: UsageError.credentialsUnreadable(cli: "agy")) { try credentials("not json") }
+        #expect(throws: UsageError.credentialsUnreadable(cli: "agy")) { try credentials("", status: 1) }
+    }
+
+    @Test func killedProcessIsTimeout() {
+        #expect(throws: UsageError.keychainTimeout) { try credentials("", status: 15, timedOut: true) }
+    }
+}
+
+@Suite struct AntigravityParsingTests {
+    @Test func loadCodeAssistTiers() throws {
+        let paid = try AntigravityProvider.parseLoadCodeAssist(json("""
+        {"cloudaicompanionProject":"proj-1","currentTier":{"id":"free-tier","name":"Antigravity"},
+         "paidTier":{"id":"g1-pro-tier","name":"Google AI Pro"}}
+        """))
+        #expect(paid.project == "proj-1")
+        #expect(paid.plan == "pro")
+
+        let ultra = try AntigravityProvider.parseLoadCodeAssist(json(#"{"paidTier":{"id":"g1-ultra-tier"}}"#))
+        #expect(ultra.plan == "ultra")
+
+        let free = try AntigravityProvider.parseLoadCodeAssist(json(#"{"currentTier":{"id":"free-tier"}}"#))
+        #expect(free.project == nil)
+        #expect(free.plan == "free")
+    }
+
+    @Test func mergesSharedQuotaGroupsAndIgnoresInternalAndTabModels() throws {
+        let now = try #require(parseISO8601("2026-11-23T11:37:00Z"))
+        let data = json("""
+        {"models":{
+          "gemini-2.5-pro":{"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
+            "quotaInfo":{"remainingFraction":0.92,"resetTime":"2026-11-23T16:30:00Z"}},
+          "gemini-3-flash":{"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
+            "quotaInfo":{"remainingFraction":0.92,"resetTime":"2026-11-23T16:30:00Z"}},
+          "claude-opus-5-5-high":{"recommended":true,"modelProvider":"MODEL_PROVIDER_ANTHROPIC",
+            "quotaInfo":{"remainingFraction":1,"resetTime":"2026-11-23T16:37:00Z"}},
+          "gpt-oss-120b-medium":{"recommended":true,"modelProvider":"MODEL_PROVIDER_OPENAI",
+            "quotaInfo":{"remainingFraction":1,"resetTime":"2026-11-23T16:37:00Z"}},
+          "chat_20706":{"isInternal":true,"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
+            "quotaInfo":{"remainingFraction":0.1,"resetTime":"2026-11-23T16:30:00Z"}},
+          "tab_flash_lite_preview":{"modelProvider":"MODEL_PROVIDER_GOOGLE",
+            "quotaInfo":{"remainingFraction":1}}
+        }}
+        """)
+        let snapshot = try AntigravityProvider.parseModels(data, now: now)
+        #expect(snapshot.windows.map(\.label) == ["Gemini", "Claude · GPT"])
+        #expect(abs(snapshot.windows[0].usedPercent - 8) < 0.001)
+        #expect(snapshot.windows[1].usedPercent == 0)
+        #expect(snapshot.windows[0].resetsAt == parseISO8601("2026-11-23T16:30:00Z"))
+        #expect(snapshot.windows.map(\.duration) == [18_000, 18_000])
+        #expect(snapshot.fetchedAt == now)
+    }
+
+    @Test func splitsDivergingGroupsAndHandlesExhaustedOmittedFraction() throws {
+        let now = try #require(parseISO8601("2026-11-23T11:37:00Z"))
+        let data = json("""
+        {"models":{
+          "gemini-2.5-pro":{"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
+            "quotaInfo":{"resetTime":"2026-11-23T16:30:00Z"}},
+          "gemini-3-flash":{"recommended":true,"modelProvider":"MODEL_PROVIDER_GOOGLE",
+            "quotaInfo":{"remainingFraction":0.6,"resetTime":"2026-11-23T16:30:00Z"}},
+          "claude-sonnet-5-5-high":{"recommended":true,"modelProvider":"MODEL_PROVIDER_ANTHROPIC",
+            "quotaInfo":{"remainingFraction":0.25,"resetTime":"2026-11-29T11:37:00Z"}},
+          "gpt-oss-120b-medium":{"recommended":true,"modelProvider":"MODEL_PROVIDER_OPENAI",
+            "quotaInfo":{"remainingFraction":0.8,"resetTime":"2026-11-23T16:30:00Z"}}
+        }}
+        """)
+        let snapshot = try AntigravityProvider.parseModels(data, now: now)
+        #expect(snapshot.windows.map(\.label) == ["Gemini Pro", "Gemini Flash", "Claude", "GPT"])
+        for (actual, expected) in zip(snapshot.windows.map(\.usedPercent), [100.0, 40.0, 75.0, 20.0]) {
+            #expect(abs(actual - expected) < 0.001)
+        }
+        #expect(snapshot.windows.map(\.duration) == [18_000, 18_000, 604_800, 18_000])
+    }
+
+    @Test func malformedThrows() {
+        #expect(throws: UsageError.badResponse) { try AntigravityProvider.parseModels(json("[1]"), now: now) }
+    }
 }

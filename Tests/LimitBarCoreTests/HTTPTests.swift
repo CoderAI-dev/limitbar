@@ -113,6 +113,23 @@ private final class LocalHTTPServer: @unchecked Sendable {
         }
     }
 
+    @Test func postSendsBodyAndRefusesRedirects() async throws {
+        let target = try LocalHTTPServer()
+        defer { target.stop() }
+        let origin = try LocalHTTPServer(status: 302, headers: ["Location": target.url.absoluteString])
+        defer { origin.stop() }
+        do {
+            _ = try await HTTP.post(origin.url, body: Data("{}".utf8), headers: [
+                "Authorization": "Bearer TOKEN-SENTINEL",
+            ], cli: "agy")
+            Issue.record("Expected HTTP 302 instead of a followed redirect")
+        } catch let error as UsageError {
+            #expect(error == .http(status: 302))
+        }
+        #expect(origin.requestCount == 1)
+        #expect(target.requestCount == 0)
+    }
+
     @Test func serverErrorKeepsStatus() async throws {
         let server = try LocalHTTPServer(status: 500)
         defer { server.stop() }

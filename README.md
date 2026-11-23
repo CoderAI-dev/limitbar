@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/social-preview.png" alt="LimitBar — AI usage monitor for your Mac menu bar: Claude Code, Codex and Grok usage limits with progress bars and pace tracking"></p>
 
-<p align="center">Track Claude Code, OpenAI Codex and Grok usage limits with live progress bars —
+<p align="center">Track Claude Code, OpenAI Codex, Grok and Google Antigravity usage limits with live progress bars —
 and see at a glance whether you are on pace or about to hit the limit before the reset.</p>
 
 <p align="center">
@@ -18,7 +18,7 @@ usage across the week instead of getting rate-limited on day five.
 ## Features
 
 - **All your AI subscriptions in one menu bar icon** — one mini progress bar per provider
-  (C = Claude, X = Codex, G = Grok), filled to its most-used limit. Monochrome like the system
+  (C = Claude, X = Codex, G = Grok, A = Antigravity), filled to its most-used limit. Monochrome like the system
   battery icon; dimmed when the data is stale. Providers you are not signed in to are hidden.
 - **Every limit window** — 5-hour session limits, weekly limits and per-model limits (e.g. Claude
   weekly limits for a specific model), each with a progress bar, percent used, time until reset
@@ -28,7 +28,7 @@ usage across the week instead of getting rate-limited on day five.
   "spare". Windows of a week or longer (weekly limits, Grok's monthly period) are budgeted over
   6/7 of their length — 6 of 7 days for a week — leaving a buffer; shorter windows such as 5h use
   their full length.
-- **Zero configuration** — reuses the logins of the official `claude`, `codex` and `grok` CLIs. If
+- **Zero configuration** — reuses the logins of the official `claude`, `codex`, `grok` and `agy` CLIs. If
   the CLI works in your terminal, LimitBar can read its limits. No API keys, no accounts.
 - **Private by design** — talks only to each provider's own endpoint, never refreshes, stores, logs
   or uploads your tokens. No server, no telemetry, no analytics.
@@ -44,10 +44,11 @@ usage across the week instead of getting rate-limited on day five.
 | **Claude Code** (Anthropic) | `claude` CLI with a Claude subscription (Pro / Max) | 5-hour session, weekly, weekly per model |
 | **Codex** (OpenAI) | `codex` CLI signed in with ChatGPT | 5-hour, weekly |
 | **Grok** (xAI) | `grok` CLI | weekly / monthly credit usage |
+| **Antigravity** (Google) | `agy` CLI signed in with Google | rolling quota per model group (Gemini, Claude · GPT) |
 
 Providers whose CLI is not signed in are hidden from the menu bar and the popover, and appear
 automatically after you sign in (Claude Code used without a subscription login and Codex used with
-an API key count as not signed in). If none is signed in, all three are shown with a sign-in hint.
+an API key count as not signed in). If none is signed in, all four are shown with a sign-in hint.
 
 ## Requirements
 
@@ -78,6 +79,7 @@ popover. Run the unit tests with `swift test`. The icon is rendered by `scripts/
 | Claude | Keychain item `Claude Code-credentials`, read through `/usr/bin/security` | `GET https://api.anthropic.com/api/oauth/usage` |
 | Codex | `~/.codex/auth.json` | `GET https://chatgpt.com/backend-api/wham/usage` |
 | Grok | `~/.grok/auth.json` | `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits` |
+| Antigravity | Keychain item `gemini` / `antigravity`, read through `/usr/bin/security` | `POST https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist`, `v1internal:fetchAvailableModels` |
 
 Data refreshes every 5 minutes, when the popover opens (if older than 60 s), and on demand.
 
